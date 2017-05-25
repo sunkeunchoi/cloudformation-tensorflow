@@ -398,7 +398,7 @@ Parameters:
   EFSFileSystemId:
     AllowedPattern: '(^fs-[0-9a-f]{8,8})$|()$'
     ConstraintDescription: Should be a Valid EFS File System Id
-    Default: 'fs-d3d9639a'
+    Default: ''
     Description: >-
       Existing Amazon EFS File System Id or leave it blank to create a new EFS
       File System.
