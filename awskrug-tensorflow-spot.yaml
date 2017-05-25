@@ -124,7 +124,7 @@ Resources:
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: !Ref MinAutoScaleCount
       MaxSize: !Ref MaxAutoScaleCount
-      DesiredCapacity: !Ref MinAutoScaleCount
+      DesiredCapacity: !Ref DesiredCapacity
       HealthCheckType: EC2
       VPCZoneIdentifier:
         - !Join 
@@ -394,6 +394,9 @@ Parameters:
   MaxAutoScaleCount:
     Type: Number
     Default: 1
+  DesiredCapacity:
+    Type: Number
+    Default: 0
   EFSPerformanceMode:
     Type: String
     Default: generalPurpose
@@ -475,6 +478,7 @@ Metadata:
           - MinAutoScaleCount
           - MaxAutoScaleCount
           - SpotPrice
+          - DesiredCapacity
       - Label:
           default: File System Configuration
         Parameters:
@@ -527,3 +531,5 @@ Metadata:
         default: Jupyter Notebook Password
       SpotPrice:
         default: Spot Bid Price
+      DesiredCapacity:
+        default: Desired Capacity
