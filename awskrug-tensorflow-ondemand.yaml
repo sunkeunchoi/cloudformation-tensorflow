@@ -1,0 +1,521 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  AWS CloudFormation Sample Template Tensorflow installed with Jupyter notebook for us-east-1 region.
+Conditions:
+  CreateNewFileSystem: !Equals 
+    - !Ref EFSFileSystemId
+    - ''
+Resources:
+  FileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Condition: CreateNewFileSystem
+    DeletionPolicy: Retain
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+      PerformanceMode: !Ref EFSPerformanceMode
+  MountTarget1:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn:
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !If [CreateNewFileSystem,!Ref FileSystem,!Ref EFSFileSystemId]
+      SubnetId: !Ref Subnet1
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+  MountTarget2:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn:
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !If [CreateNewFileSystem,!Ref FileSystem,!Ref EFSFileSystemId]
+      SubnetId: !Ref Subnet2
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+  MountTarget3:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn:
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !If [CreateNewFileSystem,!Ref FileSystem,!Ref EFSFileSystemId]
+      SubnetId: !Ref Subnet3
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+  MountTarget4:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn:
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !If [CreateNewFileSystem,!Ref FileSystem,!Ref EFSFileSystemId]
+      SubnetId: !Ref Subnet4
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+  MountTarget5:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn:
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !If [CreateNewFileSystem,!Ref FileSystem,!Ref EFSFileSystemId]
+      SubnetId: !Ref Subnet5
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+  EfsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Instance to EFS Mount Access
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+  SecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn:
+      - EfsSecurityGroup
+      - InstanceSecurityGroup
+    Properties:
+      GroupId: !GetAtt 
+        - EfsSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      FromPort: '2049'
+      ToPort: '2049'
+      SourceSecurityGroupId: !Ref InstanceSecurityGroup
+  InstanceProfile:
+    DependsOn: InstanceRole
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+    Type: 'AWS::IAM::InstanceProfile'
+  InstanceRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+      Path: /
+      Policies:
+        - PolicyName: instance
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'autoscaling:DescribeAutoScalingGroups'
+                  - 'autoscaling:DescribeAutoScalingInstances'
+                  - 'ec2:DescribeInstances'
+                  - 'cloudformation:DescribeStackResource'
+                Resource:
+                  - '*'
+      RoleName: !Join 
+        - ''
+        - - !Ref 'AWS::StackName'
+          - '-InstanceRole'
+    Type: 'AWS::IAM::Role'
+  AutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    DependsOn:
+      - LaunchConfig
+    Properties:
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: !Ref MinAutoScaleCount
+      MaxSize: !Ref MaxAutoScaleCount
+      DesiredCapacity: !Ref MinAutoScaleCount
+      HealthCheckType: EC2
+      VPCZoneIdentifier:
+        - !Join 
+          - ','
+          - - !Ref Subnet1
+            - !Ref Subnet2
+            - !Ref Subnet3
+            - !Ref Subnet4
+            - !Ref Subnet5
+      Tags:
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT600S
+        Count: '1'
+  LaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DependsOn:
+      - InstanceProfile
+      - InstanceSecurityGroup
+      - EfsSecurityGroup
+      - MountTarget1
+      - MountTarget2
+      - MountTarget3
+      - MountTarget4
+      - MountTarget5
+    Properties:
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref InstanceProfile
+      KeyName: !Ref KeyName
+      ImageId: !Ref ImageId
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+        - !Ref EfsSecurityGroup
+      InstanceType: !Ref InstanceType
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          YUM_DIR="/usr/bin/yum"
+          APT_DIR="/usr/bin/apt"
+
+          # Install Lastest cfn-bootstrap
+          if [ -f "$YUM_DIR" ]; then 
+            LINUX_USER="ec2-user";
+            yum install -y aws-cfn-bootstrap nfs-utils git;
+          elif [ -f "$APT_DIR" ]; then 
+            LINUX_USER="ubuntu";
+            # Works Only for Python 2.7.5 Deeplearning AMI Ubuntu 14.04 ami-fb8e19ed
+            apt-get -qq -y install nfs-common git;
+            ln /usr/local/lib/python2.7/dist-packages/aws_cfn_bootstrap-1.4-py2.7.egg/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+            ls /opt/aws/bin | awk '{ print "ln /opt/aws/bin/"$1" /usr/local/bin/"$1  }' | sh
+            chmod 700 /etc/init.d/cfn-hup
+            chown root:root /etc/init.d/cfn-hup
+            initctl reload-configuration
+            update-rc.d cfn-hup defaults
+            update-rc.d cfn-hup enable
+            service cfn-hup start
+          else LINUX_USER="Unkown";fi
+          echo $LINUX_USER;
+          pip --version;
+          python --version;
+          python3 --version;
+
+          # Start Cloud Init Process
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfig --configsets Setup --region ${AWS::Region};
+          
+          # Make Jupyter Configure Directory
+          mkdir -p /home/$LINUX_USER/.jupyter;
+          # Write Jupyter Configure File
+          cat << EOF > /home/$LINUX_USER/.jupyter/jupyter_notebook_config.py
+          import os
+          from IPython.lib import passwd
+          c.IPKernelApp.matplotlib = 'inline'
+          c.InlineBackend.figure_format = 'retina'
+          c.NotebookApp.ip = '*'
+          c.NotebookApp.port = int(os.getenv('PORT', 8888))
+          c.NotebookApp.open_browser = False
+          c.NotebookApp.notebook_dir = '/${EFSMountPoint}'
+          c.MultiKernelManager.default_kernel_name = 'python'
+          c.NotebookApp.password = passwd('${JupyterPassword}')
+          EOF
+          chown $LINUX_USER:$LINUX_USER /home/$LINUX_USER/.jupyter/jupyter_notebook_config.py;
+          # Install Jupyter
+          pip3 install --upgrade pip
+          pip3 install --no-cache-dir --upgrade --quiet \
+            jupyter && \
+            python3 -m ipykernel.kernelspec
+          
+          # Library PATH
+          #export LD_LIBRARY_PATH=/usr/local/cuda-7.5/lib64:/usr/local/cuda-7.5/lib:$LD_LIBRARY_PATH
+
+          # Start Jupyter
+          if [ $LINUX_USER = "ec2-user" ]; then
+            su - ec2-user -c 'nohup /usr/bin/jupyter-notebook --config=/home/ec2-user/.jupyter/jupyter_notebook_config.py > /home/ec2-user/jupyter.log &';
+          elif [ $LINUX_USER = "ubuntu" ]; then
+            su - ubuntu -c 'nohup /usr/local/bin/jupyter-notebook --config=/home/ubuntu/.jupyter/jupyter_notebook_config.py > /home/ubuntu/jupyter.log &';
+          else echo "Unkown";fi
+
+          # Install pip dependencies
+          if [ -n "${PipInstall}" ]; then
+          pip3 install --no-cache-dir --upgrade --quiet ${PipInstall}; fi
+
+          # Git Clone
+          if [ -n "${GitHubRepo}" ]; then
+          cd /${EFSMountPoint};
+          git clone --depth=1 https://github.com/${GitHubRepo};fi
+
+          # Change Owner for Workspace
+          chown -R $LINUX_USER:$LINUX_USER /${EFSMountPoint};
+
+          # Send Cloud Formation Complete Signal
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region};
+ 
+    Metadata:
+      Comment: Install a simple application
+      'AWS::CloudFormation::Init':
+        configSets:
+          Setup:
+            - install_cfn
+            - efs-config
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfig --configsets Setup --region ${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        efs-config:
+          commands:
+            install_nfs:
+              env:
+                FS_ID: !If 
+                  - CreateNewFileSystem
+                  - !Ref FileSystem
+                  - !Ref EFSFileSystemId
+                LINUX_USER: !FindInMap 
+                  - Other
+                  - DefaultUser
+                  - !Ref ImageType
+              command: !Sub |
+                mkdir -p /${EFSMountPoint}
+                sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 $FS_ID.efs.${AWS::Region}.amazonaws.com:/ /${EFSMountPoint}
+                chown $LINUX_USER:$LINUX_USER /${EFSMountPoint}
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access and HTTP access on the configured port
+      SecurityGroupIngress:
+        - CidrIp: !Ref SSHLocation
+          FromPort: '22'
+          IpProtocol: tcp
+          ToPort: '22'
+        - CidrIp: !Ref SSHLocation
+          FromPort: '8888'
+          IpProtocol: tcp
+          ToPort: '8888'
+        - CidrIp: !Ref SSHLocation
+          FromPort: '6006'
+          IpProtocol: tcp
+          ToPort: '6006'
+      Tags:
+        - Key: Name
+          Value: !Join 
+            - ''
+            - - !Ref 'AWS::StackName'
+              - '-InstanceSecurityGroup'
+      VpcId: !Ref VpcId
+Mappings:
+  Other:
+    DefaultUser:
+      AmazonLinux: ec2-user
+      Ubuntu: ubuntu
+Parameters:
+  ImageId:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    Default: ami-a3b3d4b5
+  ImageType:
+    Description: Linux Flavor(Amazon Linux or Ubuntu)
+    Type: String
+    AllowedValues:
+      - AmazonLinux
+      - Ubuntu
+    ConstraintDescription: Amazon Supported Image Type
+    Default: AmazonLinux
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: VpcId of your existing Virtual Private Cloud (VPC)
+    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
+  InstanceType:
+    Description: Select instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - p2.16xlarge
+      - p2.8xlarge
+      - p2.xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    MinLength: '1'
+    MaxLength: '255'
+    AllowedPattern: '[\x20-\x7E]*'
+    ConstraintDescription: can contain only ASCII characters.
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  JupyterPassword:
+    Description: Jupyter Notebook access password
+    Type: String
+    Default: P@ssw0rd!
+  PipInstall:
+    Description: Additional package requirements installation through pip install
+    Type: String
+    Default: pandas tqdm
+  GitHubRepo:
+    Description: Additional git clone from github repository username/reponame
+    Type: String
+    Default: ''
+  Subnet1:
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet2:
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet3:
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet4:
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet5:
+    Type: 'AWS::EC2::Subnet::Id'
+  MinAutoScaleCount:
+    Type: Number
+    Default: 1
+  MaxAutoScaleCount:
+    Type: Number
+    Default: 1
+  EFSPerformanceMode:
+    Type: String
+    Default: generalPurpose
+    AllowedValues:
+      - generalPurpose
+      - maxIO
+  EFSFileSystemId:
+    AllowedPattern: '(^fs-[0-9a-f]{8,8})$|()$'
+    ConstraintDescription: Should be a Valid EFS File System Id
+    Default: 'fs-d3d9639a'
+    Description: >-
+      Existing Amazon EFS File System Id or leave it blank to create a new EFS
+      File System.
+    Type: String
+  EFSMountPoint:
+    Default: EFSvolume
+    Description: The Linux mount point for the EFS volume
+    MinLength: '1'
+    Type: String
+Outputs:
+  AMI:
+    Description: AMI Used.
+    Value:
+      Ref: ImageId
+  OsType:
+    Description: OS Type Selected.
+    Value:
+      Ref: ImageType
+  InstanceType:
+    Description: Instance Type Used.
+    Value:
+      Ref: InstanceType
+  KeyPairLoaded:
+    Description: Key Pair Used.
+    Value:
+      Ref: KeyName
+  InstanceSecurityGroup:
+    Value: !Ref InstanceSecurityGroup
+  EfsSecurityGroup:
+    Value: !Ref EfsSecurityGroup
+  EFSFileSystem:
+    Value: !If [CreateNewFileSystem,!Ref FileSystem,!Ref EFSFileSystemId]
+  VPC:
+    Value: !Ref VpcId
+  Subnets:
+    Value: 
+      Fn::Join: [',',[!Ref Subnet1,!Ref Subnet2,!Ref Subnet3,!Ref Subnet4,!Ref Subnet5]]
+  MountTargetIDs:
+    Description: EFS Mount target ID
+    Value:
+      Fn::Join: [',',[!Ref MountTarget1,!Ref MountTarget2,!Ref MountTarget3,!Ref MountTarget4,!Ref MountTarget5]]
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Instance Configuration
+        Parameters:
+          - InstanceType
+          - ImageId
+          - ImageType
+      - Label:
+          default: Networking Configuration
+        Parameters:
+          - VpcId
+          - Subnet1
+          - Subnet2
+          - Subnet3
+          - Subnet4
+          - Subnet5
+      - Label:
+          default: Security Configuration
+        Parameters:
+          - SSHLocation
+          - KeyName
+          - JupyterPassword
+      - Label:
+          default: Auto-Scaling Configuration
+        Parameters:
+          - MinAutoScaleCount
+          - MaxAutoScaleCount
+      - Label:
+          default: File System Configuration
+        Parameters:
+          - EFSFileSystemId
+          - EFSMountPoint
+          - EFSPerformanceMode
+      - Label:
+          default: Install Requirements
+        Parameters:
+          - PipInstall
+          - GitHubRepo
+    ParameterLabels:
+      InstanceType:
+        default: EC2 Instance Type
+      ImageId:
+        default: AMI Image ID
+      ImageType:
+        default: Amazon Linux or Ubuntu
+      VpcId:
+        default: VPC
+      Subnet1:
+        default: Subnet 
+      Subnet2:
+        default: Subnet         
+      Subnet3:
+        default: Subnet 
+      Subnet4:
+        default: Subnet 
+      Subnet5:
+        default: Subnet 
+      EFSFileSystemId:
+        default: Existing EFS ID
+      EFSMountPoint:
+        default: Mount Point
+      EFSPerformanceMode:
+        default: EFS Performance Mode
+      PipInstall:
+        default: Packages
+      GitHubRepo:
+        default: Github Repo
+      MinAutoScaleCount:
+        default: Minimum Count
+      MaxAutoScaleCount:
+        default: Maximum Count
+      SSHLocation:
+        default: IP address
+      KeyName:
+        default: EC2 Key Pair
+      JupyterPassword:
+        default: Jupyter Notebook Password
